@@ -40,6 +40,7 @@ void signal_handler(int sig) {
 // Client thread function
 void* client_thread_func(void* arg) {
     int thread_id = *(int*)arg;
+    free(arg);
     printf("Client thread %d started\n", thread_id);
     
     while (server_running) {

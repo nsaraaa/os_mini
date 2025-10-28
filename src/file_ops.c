@@ -183,16 +183,14 @@ int upload_file(const char* username, const char* filename,
         return FILE_OP_ERROR;
     }
     
-    printf("DEBUG: User found, checking file existence\n");
-    
     // Check if file exists (for overwrite case)
     ssize_t old_size = 0;
     if (file_exists(username, filename)) {
-        printf("DEBUG: File exists, getting old size\n");
+
         old_size = get_file_size(username, filename);
     }
     
-    printf("DEBUG: Checking quota (old_size=%ld, new_size=%zu)\n", old_size, data_size);
+
     
     // Check quota (accounting for potential overwrite)
     size_t net_increase = data_size;
@@ -206,7 +204,7 @@ int upload_file(const char* username, const char* filename,
         return FILE_OP_QUOTA_EXCEEDED;
     }
     
-    printf("DEBUG: Writing file to disk\n");
+
     
     // Write file to disk
     int result = write_file_to_disk(username, filename, data, data_size);
@@ -214,8 +212,7 @@ int upload_file(const char* username, const char* filename,
         printf("ERROR: Failed to write file to disk\n");
         return result;
     }
-    
-    printf("DEBUG: Updating metadata\n");
+ 
     
     // Update metadata
     if (old_size > 0) {
@@ -223,7 +220,7 @@ int upload_file(const char* username, const char* filename,
     }
     add_file_to_user(user, filename, data_size);
     
-    printf("DEBUG: Saving metadata\n");
+
     
     // Save metadata
     save_user_metadata(user);
@@ -306,7 +303,7 @@ int delete_file(const char* username, const char* filename) {
 int list_files(const char* username, char* buffer, size_t buffer_size) {
     if (!username || !buffer) return FILE_OP_INVALID_PARAM;
     
-    printf("DEBUG: list_files called for user '%s'\n", username);
+   
     
     // NO LOCK - caller already holds it!
     
@@ -317,7 +314,6 @@ int list_files(const char* username, char* buffer, size_t buffer_size) {
         return FILE_OP_ERROR;
     }
     
-    printf("DEBUG: User found, file_count=%d\n", user->file_count);
     
     // Build file list
     size_t offset = 0;
@@ -325,11 +321,11 @@ int list_files(const char* username, char* buffer, size_t buffer_size) {
     
     if (!file) {
         snprintf(buffer, buffer_size, "No files found");
-        printf("DEBUG: No files for user\n");
+   
         return FILE_OP_SUCCESS;
     }
     
-    printf("DEBUG: Building file list\n");
+  
     
     while (file && offset < buffer_size - 1) {
         int written = snprintf(buffer + offset, buffer_size - offset,
@@ -341,6 +337,5 @@ int list_files(const char* username, char* buffer, size_t buffer_size) {
         file = file->next;
     }
     
-    printf("DEBUG: File list built successfully\n");
     return FILE_OP_SUCCESS;
 }

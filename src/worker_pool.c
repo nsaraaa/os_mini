@@ -81,6 +81,12 @@ void process_task(task_t* task) {
     if (result != 0) {
         printf("Task processing failed for user '%s'\n", task->username);
     }
+
+    // Signal completion to client thread
+    pthread_mutex_lock(&task->result_mutex);
+    task->result_complete = 1;
+    pthread_cond_signal(&task->result_ready);
+    pthread_mutex_unlock(&task->result_mutex);
 }
 
 worker_pool_t* worker_pool_init(int num_threads, task_queue_t *task_queue) {

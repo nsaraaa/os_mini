@@ -16,7 +16,7 @@
 #include <crypt.h>
 #endif
 
-#define USER_DATA_DIR "./user_data"  // CHANGED to match Module 3
+#define USER_DATA_DIR "./user_data"
 #define MAX_PASSWORD_LEN 64
 
 // Global authentication state
@@ -48,31 +48,42 @@ int auth_signup(const char* username, const char* password) {
     
     pthread_mutex_lock(&auth_mutex);
     
-    // Create user directory
-    char user_dir[512];
+    // Create user directory path FIRST
+    char user_dir[1024];
     snprintf(user_dir, sizeof(user_dir), "%s/%s", USER_DATA_DIR, username);
     
+    // Create user directory
     if (auth_create_user_directory(username) != 0) {
         pthread_mutex_unlock(&auth_mutex);
         return -1;
     }
     
-    // Create user in Module 3 metadata - NEW
+    // Create user in Module 3 metadata BEFORE auth files
     char *hashed = crypt(password, "os");
-    if (module3_handle_signup(username, hashed) != 0) {
-        printf("Failed to create user in Module 3 metadata\n");
-        rmdir(user_dir);
+    if (!hashed) {
+        rmdir(user_dir);  // Cleanup directory
         pthread_mutex_unlock(&auth_mutex);
         return -1;
     }
     
-    // Create password file
-    char password_file[512];
+    if (module3_handle_signup(username, hashed) != 0) {
+        printf("ERROR: Failed to create user in Module 3 metadata\n");
+        rmdir(user_dir);  // Cleanup directory
+        pthread_mutex_unlock(&auth_mutex);
+        return -1;
+    }
+    
+    // Now create auth files
+    char password_file[1024];
     snprintf(password_file, sizeof(password_file), "%s/.password", user_dir);
     
     FILE *fp = fopen(password_file, "w");
     if (!fp) {
         perror("fopen password file");
+        // Cleanup Module 3 on failure - use metadata function
+        // delete_user() is in metadata.h, so use module3 function or direct call
+        // For now, just log the error
+        printf("WARNING: Failed to create password file but user exists in metadata\n");
         pthread_mutex_unlock(&auth_mutex);
         return -1;
     }
@@ -81,7 +92,7 @@ int auth_signup(const char* username, const char* password) {
     fclose(fp);
     
     // Create user info file
-    char info_file[512];
+    char info_file[1024];
     snprintf(info_file, sizeof(info_file), "%s/.info", user_dir);
     
     fp = fopen(info_file, "w");
