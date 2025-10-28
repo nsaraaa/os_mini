@@ -1,8 +1,5 @@
 #!/bin/bash
 
-# OS Mini Server Demo Script
-# This script demonstrates all the implemented features
-
 echo "========================================="
 echo "OS Mini Server - Module 1 Demo"
 echo "========================================="

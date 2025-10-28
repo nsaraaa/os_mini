@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Test script for authentication flow
+# test auth flow
 SERVER="localhost"
 PORT="8080"
 

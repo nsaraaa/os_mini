@@ -1,13 +1,12 @@
 #!/bin/bash
 
-# Test script for concurrent connections
+
 SERVER="localhost"
 PORT="8080"
 
 echo "Testing OS Mini Server Concurrent Connections..."
 echo "=============================================="
 
-# Test multiple concurrent connections
 echo "Starting 3 concurrent connections..."
 
 # Connection 1

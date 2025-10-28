@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "C/C++ Runner: Debug Session",
+      "type": "lldb",
+      "request": "launch",
+      "args": [],
+      "cwd": "/Users/saranoor/Downloads/os_mini/src",
+      "program": "/Users/saranoor/Downloads/os_mini/src/build/Debug/outDebug"
+    }
+  ]
+}

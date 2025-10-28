@@ -2,7 +2,6 @@ CC = gcc
 CFLAGS = -Wall -Wextra -std=c99 -pthread -D_POSIX_C_SOURCE=200809L
 LDFLAGS = -pthread
 ifeq ($(shell uname),Darwin)
-# macOS doesn't need -lcrypt
 else
 LDFLAGS += -lcrypt
 endif

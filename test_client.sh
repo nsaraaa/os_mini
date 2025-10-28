@@ -1,8 +1,5 @@
 #!/bin/bash
 
-# Simple test client script for OS Mini Server
-# Usage: ./test_client.sh [port]
-
 PORT=${1:-8080}
 SERVER="localhost"
 
