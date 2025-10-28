@@ -61,6 +61,8 @@ int module3_handle_signup(const char* username, const char* password_hash) {
 }
 
 int module3_process_upload(task_t* task) {
+    printf("DEBUG: Entering module3_process_upload\n");
+
     if (!task || !task->authenticated) {
         return FILE_OP_INVALID_PARAM;
     }
@@ -72,8 +74,12 @@ int module3_process_upload(task_t* task) {
              "File: %s\nUploaded by: %s\nTimestamp: %ld\n",
              task->filename, task->username, time(NULL));
     
+    printf("DEBUG: Calling upload_file()\n");
+
     int result = upload_file(task->username, task->filename, 
                             sample_data, strlen(sample_data));
+    
+    printf("DEBUG: upload_file returned: %d\n", result);
     
     switch (result) {
         case FILE_OP_SUCCESS:
@@ -94,6 +100,9 @@ int module3_process_upload(task_t* task) {
                     task->filename);
             return -1;
     }
+
+    printf("DEBUG: Exiting module3_process_upload\n");
+    return -1;
 }
 
 int module3_process_download(task_t* task) {
