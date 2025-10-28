@@ -52,6 +52,7 @@ void process_task(task_t* task) {
     
     switch (task->type) {
         case CMD_UPLOAD:
+        case CMD_UPLOAD_FILE:
             result = module3_process_upload(task);
             break;
             

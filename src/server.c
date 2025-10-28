@@ -130,6 +130,7 @@ void handle_client(int client_socket) {
             }
             
             case CMD_UPLOAD:
+            case CMD_UPLOAD_FILE: 
             case CMD_DOWNLOAD:
             case CMD_DELETE:
             case CMD_LIST: {

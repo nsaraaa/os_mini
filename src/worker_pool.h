@@ -2,6 +2,7 @@
 #define WORKER_POOL_H
 
 #include "task_queue.h"
+#include "command_parser.h"
 
 typedef struct {
     pthread_t *threads;

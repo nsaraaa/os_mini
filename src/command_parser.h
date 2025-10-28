@@ -10,6 +10,7 @@ typedef enum {
     CMD_LOGIN,
     CMD_SIGNUP,
     CMD_UPLOAD,
+    CMD_UPLOAD_FILE,
     CMD_DOWNLOAD,
     CMD_DELETE,
     CMD_LIST,
@@ -50,5 +51,6 @@ int push_task_to_queue(task_t* task);  // Interface with Module 2
 // Phase 2 additions
 void init_task_system(void);
 void shutdown_task_system(void);
+int handle_upload_file_command(const char* command, user_session_t* session, int client_socket);
 
 #endif // COMMAND_PARSER_H

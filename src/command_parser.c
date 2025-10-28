@@ -38,18 +38,52 @@ void shutdown_task_system(void) {
 command_type_t parse_command(const char* input) {
     if (!input) return CMD_UNKNOWN;
     
+    printf("DEBUG_PARSE: Input command: '%s'\n", input);  // ADD THIS
+    
     // Skip leading whitespace
     while (*input == ' ' || *input == '\t') input++;
     
-    if (strncasecmp(input, "LOGIN", 5) == 0) return CMD_LOGIN;
-    if (strncasecmp(input, "SIGNUP", 6) == 0) return CMD_SIGNUP;
-    if (strncasecmp(input, "LOGOUT", 6) == 0) return CMD_LOGOUT;
-    if (strncasecmp(input, "UPLOAD", 6) == 0) return CMD_UPLOAD;
-    if (strncasecmp(input, "DOWNLOAD", 8) == 0) return CMD_DOWNLOAD;
-    if (strncasecmp(input, "DELETE", 6) == 0) return CMD_DELETE;
-    if (strncasecmp(input, "LIST", 4) == 0) return CMD_LIST;
-    if (strncasecmp(input, "QUIT", 4) == 0) return CMD_QUIT;
+    printf("DEBUG_PARSE: After whitespace: '%s'\n", input);  // ADD THIS
     
+    // Check LONGER commands FIRST to avoid prefix matching issues
+    if (strncasecmp(input, "UPLOAD_FILE", 11) == 0) {
+        printf("DEBUG_PARSE: Matched UPLOAD_FILE\n");  // ADD THIS
+        return CMD_UPLOAD_FILE;
+    }
+    if (strncasecmp(input, "UPLOAD", 6) == 0) {
+        printf("DEBUG_PARSE: Matched UPLOAD\n");  // ADD THIS
+        return CMD_UPLOAD;
+    }
+    if (strncasecmp(input, "DOWNLOAD", 8) == 0) {
+        printf("DEBUG_PARSE: Matched DOWNLOAD\n");
+        return CMD_DOWNLOAD;
+    }
+    if (strncasecmp(input, "SIGNUP", 6) == 0) {
+        printf("DEBUG_PARSE: Matched SIGNUP\n");
+        return CMD_SIGNUP;
+    }
+    if (strncasecmp(input, "LOGIN", 5) == 0) {
+        printf("DEBUG_PARSE: Matched LOGIN\n");
+        return CMD_LOGIN;
+    }
+    if (strncasecmp(input, "LOGOUT", 6) == 0) {
+        printf("DEBUG_PARSE: Matched LOGOUT\n");
+        return CMD_LOGOUT;
+    }
+    if (strncasecmp(input, "DELETE", 6) == 0) {
+        printf("DEBUG_PARSE: Matched DELETE\n");
+        return CMD_DELETE;
+    }
+    if (strncasecmp(input, "LIST", 4) == 0) {
+        printf("DEBUG_PARSE: Matched LIST\n");
+        return CMD_LIST;
+    }
+    if (strncasecmp(input, "QUIT", 4) == 0) {
+        printf("DEBUG_PARSE: Matched QUIT\n");
+        return CMD_QUIT;
+    }
+    
+    printf("DEBUG_PARSE: No match found for '%s'\n", input);  // ADD THIS
     return CMD_UNKNOWN;
 }
 
@@ -107,6 +141,122 @@ task_t* create_upload_task(const char* filename, void* data, size_t data_size, u
     
     printf("=== DEBUG: create_upload_task COMPLETED ===\n");
     return task;
+}
+
+int handle_upload_file_command(const char* command, user_session_t* session, int client_socket) {
+    printf("=== DEBUG: handle_upload_file_command START ===\n");
+    
+    char filepath[512] = {0};
+    
+    // Parse file path: UPLOAD_FILE /path/to/file.txt
+    if (sscanf(command, "UPLOAD_FILE %511s", filepath) != 1) {
+        send_response(client_socket, "UPLOAD_FILE_ERROR: Usage: UPLOAD_FILE /path/to/file\n");
+        return -1;
+    }
+    
+    printf("DEBUG: File path parsed: %s\n", filepath);
+    
+    // Extract filename from path
+    char filename[256];
+    const char* last_slash = strrchr(filepath, '/');
+    if (last_slash) {
+        strncpy(filename, last_slash + 1, sizeof(filename) - 1);
+    } else {
+        strncpy(filename, filepath, sizeof(filename) - 1);
+    }
+    filename[sizeof(filename) - 1] = '\0';
+    
+    printf("DEBUG: Filename extracted: %s\n", filename);
+    
+    // Read file from local disk
+    FILE* fp = fopen(filepath, "rb");
+    if (!fp) {
+        printf("DEBUG: Failed to open local file: %s\n", filepath);
+        send_response(client_socket, "UPLOAD_FILE_ERROR: Cannot open local file\n");
+        return -1;
+    }
+    
+    // Get file size
+    fseek(fp, 0, SEEK_END);
+    long file_size = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    
+    if (file_size <= 0) {
+        fclose(fp);
+        send_response(client_socket, "UPLOAD_FILE_ERROR: Empty file or size error\n");
+        return -1;
+    }
+    
+    printf("DEBUG: Local file size: %ld bytes\n", file_size);
+    
+    // Read file data
+    void* file_data = malloc(file_size);
+    if (!file_data) {
+        fclose(fp);
+        send_response(client_socket, "UPLOAD_FILE_ERROR: Memory allocation failed\n");
+        return -1;
+    }
+    
+    size_t read_size = fread(file_data, 1, file_size, fp);
+    fclose(fp);
+    
+    if (read_size != (size_t)file_size) {
+        free(file_data);
+        send_response(client_socket, "UPLOAD_FILE_ERROR: Failed to read file\n");
+        return -1;
+    }
+    
+    printf("DEBUG: File data read successfully\n");
+    
+    // Create upload task with the file data
+    task_t* task = create_task(CMD_UPLOAD_FILE, filename, session, client_socket);
+    if (task && file_data && file_size > 0) {
+        task->file_data = file_data;
+        task->file_size = file_size;
+    }
+    if (!task) {
+        free(file_data);
+        send_response(client_socket, "ERROR: Failed to create task\n");
+        return -1;
+    }
+    
+    // ... rest of task processing (same as handle_upload_command)
+    pthread_mutex_init(&task->result_mutex, NULL);
+    pthread_cond_init(&task->result_ready, NULL);
+    task->result_complete = 0;
+    task->task_id = rand();
+    
+    if (push_task_to_queue(task) != 0) {
+        send_response(client_socket, "ERROR: Failed to submit task\n");
+        pthread_mutex_destroy(&task->result_mutex);
+        pthread_cond_destroy(&task->result_ready);
+        free(file_data);
+        free(task);
+        return -1;
+    }
+    
+    send_response(client_socket, "TASK_QUEUED: Local file read, processing upload...\n");
+    
+    // Wait for worker completion
+    pthread_mutex_lock(&task->result_mutex);
+    while (!task->result_complete) {
+        pthread_cond_wait(&task->result_ready, &task->result_mutex);
+    }
+    pthread_mutex_unlock(&task->result_mutex);
+    
+    // Send result
+    send_response(client_socket, task->result);
+    
+    // Cleanup
+    if (task->file_data) {
+        free(task->file_data);
+    }
+    pthread_mutex_destroy(&task->result_mutex);
+    pthread_cond_destroy(&task->result_ready);
+    free(task);
+    
+    printf("=== DEBUG: handle_upload_file_command COMPLETED ===\n");
+    return 0;
 }
 
 int send_response(int client_socket, const char* response) {
@@ -220,7 +370,7 @@ int handle_upload_command(const char* command, user_session_t* session, int clie
         reception_timeout++;
         
         // Small delay to prevent tight loop
-        usleep(100000); // 100ms
+        //usleep(100000); // 100ms
     }
     
     if (reception_timeout >= 10) {
@@ -297,21 +447,35 @@ int handle_upload_command(const char* command, user_session_t* session, int clie
 }
 
 int handle_authenticated_command(const char* command, user_session_t* session, int client_socket) {
+    printf("=== DEBUG_HANDLE_AUTH_START ===\n");
+    printf("DEBUG_HANDLE_AUTH: Command received: '%s'\n", command);
+    
     if (!command || !session || !session->authenticated) {
+        printf("DEBUG_HANDLE_AUTH: Invalid parameters\n");
         return -1;
     }
     
     command_type_t cmd_type = parse_command(command);
-    char filename[256] = {0};
+    printf("DEBUG_HANDLE_AUTH: Parsed command type: %d\n", cmd_type);
+    char filename[256] = {0}; 
     
-    // Handle UPLOAD separately with file data
+    // Handle different upload types
     if (cmd_type == CMD_UPLOAD) {
+        printf("DEBUG_HANDLE_AUTH: Calling handle_upload_command\n");
         return handle_upload_command(command, session, client_socket);
     }
+    
+    if (cmd_type == CMD_UPLOAD_FILE) {
+        printf("DEBUG_HANDLE_AUTH: Calling handle_upload_file_command\n");
+        return handle_upload_file_command(command, session, client_socket);
+    }
+    
+    printf("DEBUG_HANDLE_AUTH: Not an upload command, continuing to switch\n");
     
     // Parse filename for other file operations
     switch (cmd_type) {
         case CMD_DOWNLOAD:
+            printf("DEBUG_HANDLE_AUTH: Processing DOWNLOAD command\n");
             if (sscanf(command, "DOWNLOAD %255s", filename) != 1) {
                 send_response(client_socket, "DOWNLOAD_ERROR: Usage: DOWNLOAD filename\n");
                 return -1;
@@ -319,6 +483,7 @@ int handle_authenticated_command(const char* command, user_session_t* session, i
             break;
             
         case CMD_DELETE:
+            printf("DEBUG_HANDLE_AUTH: Processing DELETE command\n");
             if (sscanf(command, "DELETE %255s", filename) != 1) {
                 send_response(client_socket, "DELETE_ERROR: Usage: DELETE filename\n");
                 return -1;
@@ -326,12 +491,16 @@ int handle_authenticated_command(const char* command, user_session_t* session, i
             break;
             
         case CMD_LIST:
+            printf("DEBUG_HANDLE_AUTH: Processing LIST command\n");
             // No filename needed for LIST
             break;
             
         default:
+            printf("DEBUG_HANDLE_AUTH: UNKNOWN COMMAND TYPE: %d - This is the problem!\n", cmd_type);
             return -1;
     }
+    
+    printf("DEBUG_HANDLE_AUTH: Creating task for command type: %d\n", cmd_type);
     
     // Create task for worker (for non-upload commands)
     task_t* task = create_task(cmd_type, filename, session, client_socket);
@@ -372,7 +541,8 @@ int handle_authenticated_command(const char* command, user_session_t* session, i
     pthread_mutex_destroy(&task->result_mutex);
     pthread_cond_destroy(&task->result_ready);
     free(task);
-    
+
+    printf("=== DEBUG_HANDLE_AUTH_END ===\n");
     return 0;
 }
 
