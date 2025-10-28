@@ -40,22 +40,19 @@ void signal_handler(int sig) {
 // Client thread function
 void* client_thread_func(void* arg) {
     int thread_id = *(int*)arg;
-    free(arg);
+    free(arg); // FREE THE ALLOCATED THREAD ID
+    
     printf("Client thread %d started\n", thread_id);
     
     while (server_running) {
         int client_socket = client_queue_dequeue(client_queue);
         
         if (client_socket == -1) {
-            // Timeout or error, continue loop
             continue;
         }
         
         printf("Thread %d handling client socket %d\n", thread_id, client_socket);
-        
-        // Handle client communication
         handle_client(client_socket);
-        
         close(client_socket);
         printf("Thread %d closed client socket %d\n", thread_id, client_socket);
     }

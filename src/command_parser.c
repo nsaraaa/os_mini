@@ -174,7 +174,6 @@ int handle_upload_file_command(const char* command, user_session_t* session, int
         send_response(client_socket, "ERROR: Failed to submit task\n");
         pthread_mutex_destroy(&task->result_mutex);
         pthread_cond_destroy(&task->result_ready);
-        free(file_data);
         free(task);
         return -1;
     }
@@ -194,6 +193,7 @@ int handle_upload_file_command(const char* command, user_session_t* session, int
     // Cleanup
     if (task->file_data) {
         free(task->file_data);
+        task->file_data = NULL;
     }
     pthread_mutex_destroy(&task->result_mutex);
     pthread_cond_destroy(&task->result_ready);
@@ -220,6 +220,8 @@ int handle_upload_command(const char* command, user_session_t* session, int clie
     char filename[256] = {0};
     void* file_data = NULL;
     size_t total_received = 0;
+    int result = -1;
+    task_t* task = NULL;
     
     // Parse filename
     if (sscanf(command, "UPLOAD %255s", filename) != 1) {
@@ -232,14 +234,15 @@ int handle_upload_command(const char* command, user_session_t* session, int clie
         return -1;
     }
     
-    // Receive file data
-    char buffer[4096];
-    file_data = malloc(10 * 1024 * 1024); // 10MB max
+    // Allocate file data buffer
+    file_data = malloc(10 * 1024 * 1024);
     if (!file_data) {
         send_response(client_socket, "UPLOAD_ERROR: Memory allocation failed\n");
         return -1;
     }
     
+    // Receive file data
+    char buffer[4096];
     int reception_timeout = 0;
     int reception_success = 0;
     
@@ -252,15 +255,13 @@ int handle_upload_command(const char* command, user_session_t* session, int clie
             } else {
                 perror("recv");
             }
-            free(file_data);
-            return -1;
+            goto cleanup;
         }
         
         // Check for END marker
         int end_found = 0;
         for (int i = 0; i <= bytes_received - 3; i++) {
             if (memcmp(buffer + i, "END", 3) == 0) {
-                // Copy data before END marker
                 if (i > 0) {
                     memcpy((char*)file_data + total_received, buffer, i);
                     total_received += i;
@@ -272,34 +273,33 @@ int handle_upload_command(const char* command, user_session_t* session, int clie
         }
         
         if (!end_found) {
-            // No END marker found, copy all data
             memcpy((char*)file_data + total_received, buffer, bytes_received);
             total_received += bytes_received;
         }
         
-        // Safety check
         if (total_received > 10 * 1024 * 1024) {
-            free(file_data);
             send_response(client_socket, "UPLOAD_ERROR: File too large\n");
-            return -1;
+            goto cleanup;
         }
         
         reception_timeout++;
     }
     
     if (!reception_success) {
-        free(file_data);
         send_response(client_socket, "UPLOAD_ERROR: Timeout - no END marker received\n");
-        return -1;
+        goto cleanup;
     }
     
     // Create upload task with actual file data
-    task_t* task = create_upload_task(filename, file_data, total_received, session, client_socket);
+    task = create_upload_task(filename, file_data, total_received, session, client_socket);
     if (!task) {
-        free(file_data);  // FREE HERE if task creation fails
         send_response(client_socket, "ERROR: Failed to create task\n");
-        return -1;
+        goto cleanup;
     }
+    
+    // Task now owns file_data, so set to NULL to prevent double-free
+    free(file_data);
+    file_data = NULL;
     
     // Initialize task synchronization primitives
     pthread_mutex_init(&task->result_mutex, NULL);
@@ -310,11 +310,7 @@ int handle_upload_command(const char* command, user_session_t* session, int clie
     // Push task to worker queue
     if (push_task_to_queue(task) != 0) {
         send_response(client_socket, "ERROR: Failed to submit task\n");
-        pthread_mutex_destroy(&task->result_mutex);
-        pthread_cond_destroy(&task->result_ready);
-        free(file_data);  // FREE HERE if queue push fails
-        free(task);
-        return -1;
+        goto cleanup_task; // Use separate cleanup for task
     }
     
     send_response(client_socket, "TASK_QUEUED: File data received, processing...\n");
@@ -329,13 +325,29 @@ int handle_upload_command(const char* command, user_session_t* session, int clie
     // Send result back to client
     send_response(client_socket, task->result);
     
-    // Cleanup - task owns file_data, so we don't free it here
-    // The task cleanup will handle file_data in handle_authenticated_command
-    pthread_mutex_destroy(&task->result_mutex);
-    pthread_cond_destroy(&task->result_ready);
-    free(task);
+    result = 0; // Success
+    goto cleanup_task; // Success path also needs to cleanup task
+
+cleanup_task:
+    // Cleanup task resources
+    if (task) {
+        // Free file_data if task still owns it (queue push failed)
+        if (task->file_data) {
+            free(task->file_data);
+            task->file_data = NULL;
+        }
+        pthread_mutex_destroy(&task->result_mutex);
+        pthread_cond_destroy(&task->result_ready);
+        free(task);
+    }
+
+cleanup:
+    // ALWAYS free file_data if it wasn't transferred to task
+    if (file_data) {
+        free(file_data);
+    }
     
-    return 0;
+    return result;
 }
 int handle_authenticated_command(const char* command, user_session_t* session, int client_socket) {
     if (!command || !session || !session->authenticated) {

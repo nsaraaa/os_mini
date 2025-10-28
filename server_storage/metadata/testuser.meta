@@ -1,0 +1,10 @@
+username=testuser
+password_hash=osiX91NwIoSos
+storage_used=18
+storage_quota=104857600
+file_count=1
+created_at=1761678566
+last_login=1761678566
+FILES_BEGIN
+file=test.txt,18,1761678569
+FILES_END
