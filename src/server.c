@@ -153,6 +153,7 @@ void handle_client(int client_socket) {
                         "  LOGIN username password - Login to account\n"
                         "  LOGOUT - Logout from account\n"
                         "  UPLOAD filename - Upload file (requires login)\n"
+                        "  UPLOAD_FILE /path/to/file - Upload file from server disk\n"  // NEW
                         "  DOWNLOAD filename - Download file (requires login)\n"
                         "  DELETE filename - Delete file (requires login)\n"
                         "  LIST - List files (requires login)\n"

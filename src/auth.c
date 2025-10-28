@@ -1,4 +1,5 @@
 #include "auth.h"
+#include "module3_integration.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -15,7 +16,7 @@
 #include <crypt.h>
 #endif
 
-#define USER_DATA_DIR "/media/sf_OS/Lab_07/os_mini/user_data"
+#define USER_DATA_DIR "./user_data"  // CHANGED to match Module 3
 #define MAX_PASSWORD_LEN 64
 
 // Global authentication state
@@ -56,6 +57,15 @@ int auth_signup(const char* username, const char* password) {
         return -1;
     }
     
+    // Create user in Module 3 metadata - NEW
+    char *hashed = crypt(password, "os");
+    if (module3_handle_signup(username, hashed) != 0) {
+        printf("Failed to create user in Module 3 metadata\n");
+        rmdir(user_dir);
+        pthread_mutex_unlock(&auth_mutex);
+        return -1;
+    }
+    
     // Create password file
     char password_file[512];
     snprintf(password_file, sizeof(password_file), "%s/.password", user_dir);
@@ -63,14 +73,6 @@ int auth_signup(const char* username, const char* password) {
     FILE *fp = fopen(password_file, "w");
     if (!fp) {
         perror("fopen password file");
-        pthread_mutex_unlock(&auth_mutex);
-        return -1;
-    }
-    
-    // Hash the password (simple hash for demo purposes)
-    char *hashed = crypt(password, "os");
-    if (!hashed) {
-        fclose(fp);
         pthread_mutex_unlock(&auth_mutex);
         return -1;
     }
@@ -89,7 +91,7 @@ int auth_signup(const char* username, const char* password) {
         fclose(fp);
     }
     
-    printf("User '%s' created successfully\n", username);
+    printf("User '%s' created successfully in both modules\n", username);
     pthread_mutex_unlock(&auth_mutex);
     return 0;
 }
@@ -99,9 +101,6 @@ int auth_login(const char* username, const char* password, user_session_t* sessi
         return -1;
     }
 
-    // Note: We don't hold the global auth mutex for login to allow
-    // multiple clients to log in concurrently. File reads are safe.
-    
     // Build paths
     char user_dir[512];
     char password_file[512];
@@ -118,7 +117,6 @@ int auth_login(const char* username, const char* password, user_session_t* sessi
     // Read stored password hash
     FILE *fp = fopen(password_file, "r");
     if (!fp) {
-        pthread_mutex_unlock(&auth_mutex);
         return -1;
     }
     
@@ -193,15 +191,6 @@ int auth_create_user_directory(const char* username) {
     // Create directory
     if (mkdir(user_dir, 0755) == -1) {
         perror("mkdir user directory");
-        return -1;
-    }
-    
-    // Create files subdirectory
-    char files_dir[512];
-    snprintf(files_dir, sizeof(files_dir), "%s/files", user_dir);
-    if (mkdir(files_dir, 0755) == -1) {
-        perror("mkdir files directory");
-        rmdir(user_dir); // Clean up
         return -1;
     }
     

@@ -227,3 +227,23 @@ size_t get_user_storage_used(user_metadata_t* user) {
 size_t get_user_storage_quota(user_metadata_t* user) {
     return user ? user->storage_quota : 0;
 }
+void debug_print_users(void) {
+    printf("\n=== METADATA DEBUG ===\n");
+    printf("Total users: %d\n", metadata_mgr.user_count);
+    
+    user_metadata_t *current = metadata_mgr.users;
+    int count = 0;
+    while (current && count < 100) {  // Safety limit
+        printf("  User[%d]: %s (files: %d, storage: %zu/%zu)\n",
+               count, current->username, current->file_count,
+               current->storage_used, current->storage_quota);
+        current = current->next;
+        count++;
+    }
+    
+    if (count >= 100) {
+        printf("  WARNING: Possible infinite loop in user list!\n");
+    }
+    
+    printf("=== END DEBUG ===\n\n");
+}

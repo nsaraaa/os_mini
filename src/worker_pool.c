@@ -22,8 +22,8 @@ void* worker_thread_func(void* arg) {
             break; // Shutdown signal
         }
         
-        printf("Worker processing task: type=%d, user=%s, file=%s\n", 
-               task->type, task->username, task->filename);
+        printf("Worker processing task: type=%d, user=%s, file=%s, data_size=%zu\n", 
+               task->type, task->username, task->filename, task->file_size);
         
         // Process the task
         process_task(task);

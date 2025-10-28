@@ -174,21 +174,25 @@ int upload_file(const char* username, const char* filename,
     printf("Upload request: user='%s', file='%s', size=%zu\n", 
            username, filename, data_size);
     
-    // Acquire user lock
-    lock_user(username);
+    // NO LOCK - caller (worker) already holds it!
     
     // Get user metadata
     user_metadata_t* user = get_user(username);
     if (!user) {
-        unlock_user(username);
+        printf("ERROR: User '%s' not found in metadata\n", username);
         return FILE_OP_ERROR;
     }
+    
+    printf("DEBUG: User found, checking file existence\n");
     
     // Check if file exists (for overwrite case)
     ssize_t old_size = 0;
     if (file_exists(username, filename)) {
+        printf("DEBUG: File exists, getting old size\n");
         old_size = get_file_size(username, filename);
     }
+    
+    printf("DEBUG: Checking quota (old_size=%ld, new_size=%zu)\n", old_size, data_size);
     
     // Check quota (accounting for potential overwrite)
     size_t net_increase = data_size;
@@ -198,16 +202,20 @@ int upload_file(const char* username, const char* filename,
     }
     
     if (!check_quota(user, net_increase)) {
-        unlock_user(username);
+        printf("ERROR: Quota check failed\n");
         return FILE_OP_QUOTA_EXCEEDED;
     }
+    
+    printf("DEBUG: Writing file to disk\n");
     
     // Write file to disk
     int result = write_file_to_disk(username, filename, data, data_size);
     if (result != FILE_OP_SUCCESS) {
-        unlock_user(username);
+        printf("ERROR: Failed to write file to disk\n");
         return result;
     }
+    
+    printf("DEBUG: Updating metadata\n");
     
     // Update metadata
     if (old_size > 0) {
@@ -215,10 +223,11 @@ int upload_file(const char* username, const char* filename,
     }
     add_file_to_user(user, filename, data_size);
     
+    printf("DEBUG: Saving metadata\n");
+    
     // Save metadata
     save_user_metadata(user);
     
-    unlock_user(username);
     printf("Upload completed successfully for user '%s'\n", username);
     return FILE_OP_SUCCESS;
 }
@@ -230,27 +239,22 @@ int download_file(const char* username, const char* filename,
     
     printf("Download request: user='%s', file='%s'\n", username, filename);
     
-    // Acquire user lock
-    lock_user(username);
+    // NO LOCK - caller already holds it!
     
     // Get user metadata
     user_metadata_t* user = get_user(username);
     if (!user) {
-        unlock_user(username);
         return FILE_OP_ERROR;
     }
     
     // Check if file exists in metadata
     file_metadata_t* file_meta = get_file_metadata(user, filename);
     if (!file_meta) {
-        unlock_user(username);
         return FILE_OP_NOT_FOUND;
     }
     
     // Read file from disk
     int result = read_file_from_disk(username, filename, data, data_size);
-    
-    unlock_user(username);
     
     if (result == FILE_OP_SUCCESS) {
         printf("Download completed successfully for user '%s'\n", username);
@@ -264,24 +268,21 @@ int delete_file(const char* username, const char* filename) {
     
     printf("Delete request: user='%s', file='%s'\n", username, filename);
     
-    // Acquire user lock
-    lock_user(username);
+    // NO LOCK - caller already holds it!
     
     // Get user metadata
     user_metadata_t* user = get_user(username);
     if (!user) {
-        unlock_user(username);
         return FILE_OP_ERROR;
     }
     
     // Check if file exists
     file_metadata_t* file_meta = get_file_metadata(user, filename);
     if (!file_meta) {
-        unlock_user(username);
         return FILE_OP_NOT_FOUND;
     }
     
-    //     //     size_t file_size = file_meta->size;
+    size_t file_size = file_meta->size;
     
     // Delete from disk
     char path[1024];
@@ -289,7 +290,6 @@ int delete_file(const char* username, const char* filename) {
     
     if (unlink(path) == -1) {
         perror("unlink file");
-        unlock_user(username);
         return FILE_OP_ERROR;
     }
     
@@ -299,7 +299,6 @@ int delete_file(const char* username, const char* filename) {
     // Save metadata
     save_user_metadata(user);
     
-    unlock_user(username);
     printf("Delete completed successfully for user '%s'\n", username);
     return FILE_OP_SUCCESS;
 }
@@ -307,15 +306,18 @@ int delete_file(const char* username, const char* filename) {
 int list_files(const char* username, char* buffer, size_t buffer_size) {
     if (!username || !buffer) return FILE_OP_INVALID_PARAM;
     
-    // Acquire user lock
-    lock_user(username);
+    printf("DEBUG: list_files called for user '%s'\n", username);
+    
+    // NO LOCK - caller already holds it!
     
     // Get user metadata
     user_metadata_t* user = get_user(username);
     if (!user) {
-        unlock_user(username);
+        printf("ERROR: User '%s' not found\n", username);
         return FILE_OP_ERROR;
     }
+    
+    printf("DEBUG: User found, file_count=%d\n", user->file_count);
     
     // Build file list
     size_t offset = 0;
@@ -323,9 +325,11 @@ int list_files(const char* username, char* buffer, size_t buffer_size) {
     
     if (!file) {
         snprintf(buffer, buffer_size, "No files found");
-        unlock_user(username);
+        printf("DEBUG: No files for user\n");
         return FILE_OP_SUCCESS;
     }
+    
+    printf("DEBUG: Building file list\n");
     
     while (file && offset < buffer_size - 1) {
         int written = snprintf(buffer + offset, buffer_size - offset,
@@ -337,6 +341,6 @@ int list_files(const char* username, char* buffer, size_t buffer_size) {
         file = file->next;
     }
     
-    unlock_user(username);
+    printf("DEBUG: File list built successfully\n");
     return FILE_OP_SUCCESS;
 }

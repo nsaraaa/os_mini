@@ -26,6 +26,10 @@ typedef struct {
     int client_socket;
     int authenticated;
 
+    // File data fields - NEW
+    void* file_data;
+    size_t file_size;
+
     // Phase 2 additions
     int task_id;
     pthread_cond_t result_ready;
@@ -37,8 +41,10 @@ typedef struct {
 // Function prototypes
 command_type_t parse_command(const char* input);
 task_t* create_task(command_type_t type, const char* filename, user_session_t* session, int client_socket);
+task_t* create_upload_task(const char* filename, void* data, size_t data_size, user_session_t* session, int client_socket); // NEW
 int send_response(int client_socket, const char* response);
 int handle_authenticated_command(const char* command, user_session_t* session, int client_socket);
+int handle_upload_command(const char* command, user_session_t* session, int client_socket); // NEW
 int push_task_to_queue(task_t* task);  // Interface with Module 2
 
 // Phase 2 additions

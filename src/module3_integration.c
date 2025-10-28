@@ -61,31 +61,34 @@ int module3_handle_signup(const char* username, const char* password_hash) {
 }
 
 int module3_process_upload(task_t* task) {
-    printf("DEBUG: Entering module3_process_upload\n");
-
     if (!task || !task->authenticated) {
         return FILE_OP_INVALID_PARAM;
     }
     
-    // For demo purposes, create sample data
-    // In real implementation, you'd receive actual file data from client
-    char sample_data[1024];
-    snprintf(sample_data, sizeof(sample_data), 
-             "File: %s\nUploaded by: %s\nTimestamp: %ld\n",
-             task->filename, task->username, time(NULL));
+    printf("Processing upload: user=%s, file=%s, size=%zu\n", 
+           task->username, task->filename, task->file_size);
     
-    printf("DEBUG: Calling upload_file()\n");
-
-    int result = upload_file(task->username, task->filename, 
+    // Use ACTUAL file data instead of sample data
+    int result;
+    if (task->file_data && task->file_size > 0) {
+        // Use real file data received from client
+        result = upload_file(task->username, task->filename, 
+                            task->file_data, task->file_size);
+    } else {
+        // Fallback to sample data (for backward compatibility)
+        char sample_data[1024];
+        snprintf(sample_data, sizeof(sample_data), 
+                 "File: %s\nUploaded by: %s\nTimestamp: %ld\n",
+                 task->filename, task->username, time(NULL));
+        result = upload_file(task->username, task->filename, 
                             sample_data, strlen(sample_data));
-    
-    printf("DEBUG: upload_file returned: %d\n", result);
+    }
     
     switch (result) {
         case FILE_OP_SUCCESS:
             snprintf(task->result, sizeof(task->result),
-                    "UPLOAD_SUCCESS: File '%s' uploaded successfully\n", 
-                    task->filename);
+                    "UPLOAD_SUCCESS: File '%s' uploaded successfully (%zu bytes)\n", 
+                    task->filename, task->file_size);
             return 0;
             
         case FILE_OP_QUOTA_EXCEEDED:
@@ -96,13 +99,10 @@ int module3_process_upload(task_t* task) {
             
         default:
             snprintf(task->result, sizeof(task->result),
-                    "UPLOAD_ERROR: Failed to upload file '%s'\n", 
-                    task->filename);
+                    "UPLOAD_ERROR: Failed to upload file '%s' (error %d)\n", 
+                    task->filename, result);
             return -1;
     }
-
-    printf("DEBUG: Exiting module3_process_upload\n");
-    return -1;
 }
 
 int module3_process_download(task_t* task) {
