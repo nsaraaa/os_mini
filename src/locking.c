@@ -52,7 +52,7 @@ static struct user_lock* get_user_lock(const char* username) {
     // Not found, create new one
     if (lock_manager.count >= lock_manager.capacity) {
         // Resize array (simplified - in production you'd want better growth strategy)
-        int new_capacity = lock_manager.capacity * 2;
+        int new_capacity = (lock_manager.capacity == 0) ? INITIAL_CAPACITY : lock_manager.capacity * 2;
         struct user_lock* new_locks = realloc(lock_manager.user_locks, 
                                             sizeof(struct user_lock) * new_capacity);
         if (!new_locks) {

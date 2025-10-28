@@ -13,8 +13,9 @@
 #include "client_queue.h"
 #include "auth.h"
 #include "command_parser.h"
-#include "worker_pool.h"  // ADD THIS
+#include "worker_pool.h"
 #include "locking.h"
+#include "module3_integration.h"  // ADD MODULE 3
 
 #define DEFAULT_PORT 8080
 #define MAX_CLIENTS 100
@@ -75,6 +76,7 @@ int main(int argc, char* argv[]) {
     }
     
     printf("Starting OS Mini Server on port %d\n", port);
+    printf("===========================================\n");
     
     // Set up signal handler
     signal(SIGINT, signal_handler);
@@ -87,25 +89,33 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
     
-    // Initialize authentication system
+    // Initialize authentication system (Module 1)
     if (auth_init() != 0) {
         fprintf(stderr, "Failed to initialize authentication system\n");
         exit(1);
     }
     
+    // Initialize locking system (Module 2)
     if (lock_manager_init() != 0) {
         fprintf(stderr, "Failed to initialize locking system\n");
         exit(1);
     }
 
-    // INITIALIZE TASK SYSTEM (NEW) - Add this after auth_init()
+    // Initialize task system (Module 2)
     init_task_system();
+    
+    // INITIALIZE MODULE 3 - File Storage System
+    if (module3_init() != 0) {
+        fprintf(stderr, "Failed to initialize Module 3\n");
+        shutdown_task_system();
+        exit(1);
+    }
     
     // Create server socket
     server_socket = create_server_socket(port);
     if (server_socket == -1) {
         fprintf(stderr, "Failed to create server socket\n");
-        // Cleanup task system if socket creation fails
+        module3_cleanup();
         shutdown_task_system();
         exit(1);
     }
@@ -123,15 +133,18 @@ int main(int argc, char* argv[]) {
             for (int j = 0; j < i; j++) {
                 pthread_cancel(client_threads[j]);
             }
+            module3_cleanup();
             shutdown_task_system();
             exit(1);
         }
     }
     
     printf("Thread pool created with %d threads\n", THREAD_POOL_SIZE);
+    printf("===========================================\n");
+    printf("Server listening for connections...\n");
+    printf("===========================================\n");
     
     // Main accept loop
-    printf("Server listening for connections...\n");
     while (server_running) {
         struct sockaddr_in client_addr;
         socklen_t client_len = sizeof(client_addr);
@@ -157,18 +170,21 @@ int main(int argc, char* argv[]) {
         }
     }
     
+    printf("\n===========================================\n");
     printf("Shutting down server...\n");
+    printf("===========================================\n");
     
     // Wait for all client threads to finish
     for (int i = 0; i < THREAD_POOL_SIZE; i++) {
         pthread_join(client_threads[i], NULL);
     }
     
-    // Cleanup - ADD TASK SYSTEM SHUTDOWN
-    shutdown_task_system();  // NEW - Add this before other cleanup
-    lock_manager_cleanup(); 
+    // Cleanup in reverse order of initialization
+    module3_cleanup();          // NEW - Module 3 cleanup
+    shutdown_task_system();     // Module 2 task system
+    lock_manager_cleanup();     // Module 2 locking
     client_queue_destroy(client_queue);
-    auth_cleanup();
+    auth_cleanup();             // Module 1 auth
     
     if (server_socket != -1) {
         close(server_socket);
