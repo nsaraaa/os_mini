@@ -1,4 +1,6 @@
 #include "command_parser.h"
+#include "task_queue.h"
+#include "worker_pool.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -7,13 +9,31 @@
 #include <sys/socket.h>
 #include <dirent.h>
 
-// Global task queue (placeholder - will be replaced by Module 2 interface)
-static task_t task_queue[1000];
-static int task_queue_count = 0;
-static pthread_mutex_t task_queue_mutex = PTHREAD_MUTEX_INITIALIZER;
+// Global task system (Phase 2)
+static task_queue_t *global_task_queue = NULL;
+static worker_pool_t *global_worker_pool = NULL;
 
-// Forward declaration
-void simulate_task_processing(task_t* task);
+// Initialize task system (called from main)
+void init_task_system(void) {
+    global_task_queue = task_queue_init(1000);
+    global_worker_pool = worker_pool_init(4, global_task_queue); // 4 worker threads
+    printf("Task system initialized\n");
+}
+
+// Shutdown task system (called from main)
+void shutdown_task_system(void) {
+    if (global_worker_pool) {
+        worker_pool_shutdown(global_worker_pool);
+        worker_pool_destroy(global_worker_pool);
+        global_worker_pool = NULL;
+    }
+    if (global_task_queue) {
+        task_queue_destroy(global_task_queue);
+        global_task_queue = NULL;
+    }
+    printf("Task system shutdown\n");
+}
+
 
 command_type_t parse_command(const char* input) {
     if (!input) return CMD_UNKNOWN;
@@ -109,132 +129,54 @@ int handle_authenticated_command(const char* command, user_session_t* session, i
             return -1;
     }
     
-    // Create task for Module 2
+    // Create task for worker
     task_t* task = create_task(cmd_type, filename, session, client_socket);
     if (!task) {
         send_response(client_socket, "ERROR: Failed to create task\n");
         return -1;
     }
     
-    // Push task to queue (placeholder implementation)
+    // Initialize task synchronization primitives
+    pthread_mutex_init(&task->result_mutex, NULL);
+    pthread_cond_init(&task->result_ready, NULL);
+    task->result_complete = 0;
+    task->task_id = rand(); // Simple ID generation
+    
+    // Send initial response
+    send_response(client_socket, "TASK_QUEUED: Task submitted to worker pool\n");
+    
+    // Push task to worker queue
     if (push_task_to_queue(task) != 0) {
         send_response(client_socket, "ERROR: Failed to submit task\n");
+        pthread_mutex_destroy(&task->result_mutex);
+        pthread_cond_destroy(&task->result_ready);
         free(task);
         return -1;
     }
     
-    // In the placeholder queue, we process immediately, so no extra ack to avoid duplicates
+    // Wait for worker to complete (Phase 2 communication)
+    pthread_mutex_lock(&task->result_mutex);
+    while (!task->result_complete) {
+        pthread_cond_wait(&task->result_ready, &task->result_mutex);
+    }
+    pthread_mutex_unlock(&task->result_mutex);
+    
+    // Send result back to client
+    send_response(client_socket, task->result);
+    
+    // Cleanup task
+    pthread_mutex_destroy(&task->result_mutex);
+    pthread_cond_destroy(&task->result_ready);
+    free(task);
+    
     return 0;
 }
 
 int push_task_to_queue(task_t* task) {
-    // Placeholder implementation - will be replaced by Module 2 interface
-    if (!task) return -1;
+    if (!global_task_queue || !task) return -1;
     
-    pthread_mutex_lock(&task_queue_mutex);
-    if (task_queue_count >= 1000) {
-        pthread_mutex_unlock(&task_queue_mutex);
-        printf("Task queue full!\n");
-        return -1;
-    }
-    // Copy task to queue
-    memcpy(&task_queue[task_queue_count], task, sizeof(task_t));
-    task_queue_count++;
-    pthread_mutex_unlock(&task_queue_mutex);
-    
-    printf("Task queued: type=%d, user=%s, file=%s\n", 
+    printf("Pushing task to queue: type=%d, user=%s, file=%s\n", 
            task->type, task->username, task->filename);
     
-    // TODO: This is where we'll interface with Module 2's task queue
-    // For now, just simulate processing
-    simulate_task_processing(task);
-    
-    return 0;
-}
-
-// Placeholder function to simulate task processing
-void simulate_task_processing(task_t* task) {
-    if (!task) return;
-
-    // Operate within user's files directory
-    char files_dir[1024] = {0};
-    snprintf(files_dir, sizeof(files_dir), "%s/files", task->user_dir);
-
-    switch (task->type) {
-        case CMD_UPLOAD: {
-            // Create a placeholder file with simple content
-            char path[1400];
-            snprintf(path, sizeof(path), "%s/%s", files_dir, task->filename);
-            FILE *fp = fopen(path, "w");
-            if (!fp) {
-                send_response(task->client_socket, "UPLOAD_ERROR: Could not create file\n");
-                break;
-            }
-            fprintf(fp, "Uploaded by %s\n", task->username);
-            fclose(fp);
-            send_response(task->client_socket, "UPLOAD_SUCCESS: File uploaded successfully\n");
-            break;
-        }
-        case CMD_DOWNLOAD: {
-            char path[1400];
-            snprintf(path, sizeof(path), "%s/%s", files_dir, task->filename);
-            FILE *fp = fopen(path, "r");
-            if (!fp) {
-                send_response(task->client_socket, "DOWNLOAD_ERROR: File not found\n");
-                break;
-            }
-            // For now, just report success (not streaming content)
-            fclose(fp);
-            send_response(task->client_socket, "DOWNLOAD_SUCCESS: File download completed\n");
-            break;
-        }
-        case CMD_DELETE: {
-            char path[1400];
-            snprintf(path, sizeof(path), "%s/%s", files_dir, task->filename);
-            if (unlink(path) == 0) {
-                send_response(task->client_socket, "DELETE_SUCCESS: File deleted successfully\n");
-            } else {
-                send_response(task->client_socket, "DELETE_ERROR: File not found or cannot delete\n");
-            }
-            break;
-        }
-        case CMD_LIST: {
-            DIR *d = opendir(files_dir);
-            if (!d) {
-                send_response(task->client_socket, "LIST_ERROR: Cannot open user files directory\n");
-                break;
-            }
-            struct dirent *de;
-            char buffer[4096];
-            size_t offset = 0;
-            const char *header = "LIST_SUCCESS:";
-            offset = snprintf(buffer, sizeof(buffer), "%s", header);
-            int count = 0;
-            while ((de = readdir(d)) != NULL) {
-                if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) continue;
-                // Append with space separation
-                size_t need = strlen(de->d_name) + 2; // space + name
-                if (offset + need + 1 >= sizeof(buffer)) { // +1 for newline
-                    break;
-                }
-                offset += snprintf(buffer + offset, sizeof(buffer) - offset, " %s", de->d_name);
-                count++;
-            }
-            closedir(d);
-            if (count == 0) {
-                send_response(task->client_socket, "LIST_SUCCESS: No files found\n");
-            } else {
-                if (offset + 1 < sizeof(buffer)) {
-                    buffer[offset++] = '\n';
-                    buffer[offset] = '\0';
-                }
-                send_response(task->client_socket, buffer);
-            }
-            break;
-        }
-        default:
-            break;
-    }
-    // Since create_task used malloc, free the task here after processing in placeholder flow
-    free(task);
+    return task_queue_enqueue(global_task_queue, task);
 }

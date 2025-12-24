@@ -15,7 +15,7 @@
 #include <crypt.h>
 #endif
 
-#define USER_DATA_DIR "/tmp/os_mini_users"
+#define USER_DATA_DIR "/media/sf_OS/Lab_07/os_mini/user_data"
 #define MAX_PASSWORD_LEN 64
 
 // Global authentication state

@@ -15,6 +15,8 @@ BIN_DIR = bin
 SOURCES = $(wildcard $(SRC_DIR)/*.c)
 OBJECTS = $(SOURCES:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 TARGET = $(BIN_DIR)/os_mini_server
+SOURCES = $(wildcard $(SRC_DIR)/*.c)
+# This should automatically include locking.c, task_queue.c, worker_pool.c
 
 # Default target
 all: $(TARGET)

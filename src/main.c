@@ -13,6 +13,8 @@
 #include "client_queue.h"
 #include "auth.h"
 #include "command_parser.h"
+#include "worker_pool.h"  // ADD THIS
+#include "locking.h"
 
 #define DEFAULT_PORT 8080
 #define MAX_CLIENTS 100
@@ -91,10 +93,20 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
     
+    if (lock_manager_init() != 0) {
+        fprintf(stderr, "Failed to initialize locking system\n");
+        exit(1);
+    }
+
+    // INITIALIZE TASK SYSTEM (NEW) - Add this after auth_init()
+    init_task_system();
+    
     // Create server socket
     server_socket = create_server_socket(port);
     if (server_socket == -1) {
         fprintf(stderr, "Failed to create server socket\n");
+        // Cleanup task system if socket creation fails
+        shutdown_task_system();
         exit(1);
     }
     
@@ -107,6 +119,11 @@ int main(int argc, char* argv[]) {
         
         if (pthread_create(&client_threads[i], NULL, client_thread_func, thread_id) != 0) {
             fprintf(stderr, "Failed to create client thread %d\n", i);
+            // Cleanup on failure
+            for (int j = 0; j < i; j++) {
+                pthread_cancel(client_threads[j]);
+            }
+            shutdown_task_system();
             exit(1);
         }
     }
@@ -147,7 +164,9 @@ int main(int argc, char* argv[]) {
         pthread_join(client_threads[i], NULL);
     }
     
-    // Cleanup
+    // Cleanup - ADD TASK SYSTEM SHUTDOWN
+    shutdown_task_system();  // NEW - Add this before other cleanup
+    lock_manager_cleanup(); 
     client_queue_destroy(client_queue);
     auth_cleanup();
     
